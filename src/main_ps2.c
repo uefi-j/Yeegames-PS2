@@ -96,6 +96,21 @@ static void audio_pump(void) {
 void audio_music_start(void) { if (!wav_ok) return; audsrv_stop_audio(); part_idx = 0; if (!load_part(0)) return; playing = 1; audio_pump(); }
 void audio_music_stop(void)  { playing = 0; if (wav_ok) audsrv_stop_audio(); }
 
+/* ---------- debug na tela (some depois de ~5 s) ---------- */
+#define DBG_MAX 16
+static char dbg_line[DBG_MAX][40]; static int dbg_n;
+static void dbg_draw(void) {
+  for (int i = 0; i < dbg_n; i++) text_draw(6, 6 + i * 13, dbg_line[i], 2, 0xffffff);
+}
+static void dbg(const char *fmt, int v) {
+  if (dbg_n < DBG_MAX) snprintf(dbg_line[dbg_n++], 40, fmt, v);
+  for (int k = 0; k < 2; k++) {                 /* 2 flips: cobre os dois buffers */
+    gsKit_clear(gs, GS_SETREG_RGBAQ(0x20, 0x20, 0x60, 0x80, 0));
+    dbg_draw();
+    gsKit_queue_exec(gs); gsKit_sync_flip(gs);
+  }
+}
+
 /* ---------- main ---------- */
 int main(int argc, char **argv) {
   int ret;
