@@ -1,0 +1,26 @@
+YEEWARE PS2  -  microgames estilo WarioWare
+============================================
+SEM INSTALAR O PS2SDK (compila na nuvem, de graca):
+  1) Crie um repositorio no GitHub e envie TODO o conteudo desta pasta
+     (incluindo a pasta oculta .github).
+  2) Aba "Actions" > "Compilar YEEWARE.ELF" > Run workflow (ou ele roda sozinho no envio).
+  3) Quando terminar, baixe o artefato "YEEWARE" (YEEWARE.ELF + MUSIC/BOSS.WAV).
+  O build roda na imagem Docker oficial ps2dev/ps2dev; nada pesado no seu disco.
+
+COM PS2SDK LOCAL (opcional):  make   ->  YEEWARE.ELF
+
+ONDE FICA A MUSICA:
+  YEEGAMESPS2/MUSIC/BOSS.WAV   (44100 Hz, 16 bits, mono - extraida do seu video)
+  O jogo procura, nesta ordem:
+    cdrom0:\MUSIC\BOSS.WAV;1   (ISO: ponha a pasta MUSIC na raiz da imagem)
+    mass:/YEEGAMESPS2/MUSIC/BOSS.WAV   (pendrive USB)
+    host:YEEGAMESPS2/MUSIC/BOSS.WAV    (ps2client)
+  Se nao achar o arquivo, o chefe roda mudo.
+
+COMO JOGAR:
+  START comeca. 11 microgames em ordem aleatoria (um de cada), 4 vidas.
+  AGAIN!: analogico ESQUERDO move o cursor; segure X sobre o triangulo, arraste ate o slot e solte (3 vezes).
+  CHEFE: ANALOGICO DIREITO - empurre na direcao da seta no ritmo da musica (93 notas). D-pad tambem vale.
+  50% de acertos vence.
+
+AJUSTE DE SINCRONIA:  BOSS_LATENCY_MS em src/game.c (positivo = notas chegam mais cedo).
