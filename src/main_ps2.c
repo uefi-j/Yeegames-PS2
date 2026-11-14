@@ -83,4 +83,39 @@ static void audio_init(const char *self) {
     if (load_part(0)) { wav_ok = 1; break; }
   }
   audsrv_fmt_t fmt = { 44100, 16, 1 };
-  audsrv_set_format(&fmt); audsr
+  audsrv_set_format(&fmt); audsrv_set_volume(MAX_VOLUME);
+}
+static void audio_pump(void) {
+  for (int i = 0; playing && i < 4; i++) {
+    if (buf_pos >= buf_len) { if (!load_part(++part_idx)) { playing = 0; break; } }
+    int chunk = buf_len - buf_pos; if (chunk > 4096) chunk = 4096;
+    int w = audsrv_play_audio(bufA + buf_pos, chunk);
+    if (w <= 0) break; buf_pos += w;
+  }
+}
+void audio_music_start(void) { if (!wav_ok) return; audsrv_stop_audio(); part_idx = 0; if (!load_part(0)) return; playing = 1; audio_pump(); }
+void audio_music_stop(void)  { playing = 0; if (wav_ok) audsrv_stop_audio(); }
+
+/* ---------- main ---------- */
+int main(int argc, char **argv) {
+  int ret;
+  SifInitRpc(0);
+  SifLoadModule("rom0:SIO2MAN", 0, NULL);
+  SifLoadModule("rom0:PADMAN", 0, NULL);
+  SifExecModuleBuffer(freesd_irx, size_freesd_irx, 0, NULL, &ret);
+  SifExecModuleBuffer(audsrv_irx, size_audsrv_irx, 0, NULL, &ret);
+  padInit(0); padPortOpen(0, 0, padbuf);
+  audsrv_init();
+  video_init(); audio_init(argc > 0 ? argv[0] : "");
+  game_init(1);
+  for (;;) {
+    Input in; read_input(&in);
+    audio_pump();
+    game_update(&in);
+    gsKit_clear(gs, GS_SETREG_RGBAQ(0, 0, 0, 0x80, 0));
+    game_draw();
+    gsKit_queue_exec(gs);
+    gsKit_sync_flip(gs);
+  }
+  return 0;
+}
