@@ -17,4 +17,4 @@ jobs:
           name: YEEWARE
           path: |
             YEEWARE.ELF
-            MUSIC/BOSS.WAV
+            MUSIC/*.PCM
