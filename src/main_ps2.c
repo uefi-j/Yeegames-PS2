@@ -62,53 +62,57 @@ static void read_input(Input *in) {
   in->held = held; in->pressed = held & ~held_prev; held_prev = held;
 }
 
-/* ---------- audio ---------- */
-static unsigned char *wav; static int wav_size, wav_pos, wav_ok, playing;
-static unsigned le32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
-static unsigned char *slurp(const char *path, int *size) {
-  FILE *f = fopen(path, "rb"); if (!f) return NULL;
-  fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-  unsigned char *b = malloc(n); if (!b || fread(b, 1, n, f) != (size_t)n) { fclose(f); free(b); return NULL; }
-  fclose(f); *size = (int)n; return b;
+/* ---------- audio (streaming em partes de 64KB: MUSIC/B000.PCM, B001.PCM, ...) ---------- */
+#define PART 65536
+static char bufA[PART] __attribute__((aligned(64)));
+static int buf_len, buf_pos, part_idx, wav_ok, playing;
+static char base[64];
+static int load_part(int i) {
+  char path[96]; sprintf(path, "%sB%03d.PCM", base, i);
+  FILE *f = fopen(path, "rb"); if (!f) return 0;
+  buf_len = (int)fread(bufA, 1, PART, f); fclose(f); buf_pos = 0;
+  return buf_len > 0;
 }
-static void audio_init(void) {
-  static const char *paths[] = {
-    "cdrom0:\\MUSIC\\BOSS.WAV;1",              /* ISO/disco: pasta MUSIC na raiz */
-    "mass:/YEEGAMESPS2/MUSIC/BOSS.WAV",        /* pendrive USB */
-    "host:YEEGAMESPS2/MUSIC/BOSS.WAV",         /* ps2client / ps2link */
-    "mc0:YEEGAMESPS2/BOSS.WAV", NULL };
-  unsigned char *raw = NULL; int n = 0;
-  for (int i = 0; paths[i] && !raw; i++) raw = slurp(paths[i], &n);
-  if (!raw) return;                                         /* sem musica: o chefe roda mudo, mas roda */
-  for (int p = 12; p + 8 <= n; ) {                          /* procura o chunk "data" do WAV */
-    unsigned len = le32(raw + p + 4);
-    if (!memcmp(raw + p, "data", 4)) { wav = raw + p + 8; wav_size = (int)len; if (p + 8 + wav_size > n) wav_size = n - p - 8; wav_ok = 1; break; }
-    p += 8 + (int)len + (len & 1);
+static void audio_init(const char *self) {
+  static const char *bases[] = { "cdrom0:\\MUSIC\\", "mass:/YEEGAMESPS2/MUSIC/", "host:YEEGAMESPS2/MUSIC/", "mc0:YEEGAMESPS2/", NULL };
+  for (int i = 0; bases[i]; i++) {
+    if (!strncmp(bases[i], "cdrom0", 6) && strncmp(self, "cdrom0", 6)) continue;  /* so tenta disco se bootou do disco */
+    if (!strncmp(bases[i], "host", 4) && strncmp(self, "host", 4)) continue;
+    if (!strncmp(bases[i], "mass", 4) && strncmp(self, "mass", 4)) continue;
+    strcpy(base, bases[i]);
+    if (load_part(0)) { wav_ok = 1; break; }
   }
-  audsrv_fmt_t fmt = { 44100, 16, 1 };                      /* BOSS.WAV: 44100 Hz, 16 bits, mono */
+  audsrv_fmt_t fmt = { 44100, 16, 1 };
   audsrv_set_format(&fmt); audsrv_set_volume(MAX_VOLUME);
 }
 static void audio_pump(void) {
-  for (int i = 0; playing && i < 4 && wav_pos < wav_size; i++) {
-    int chunk = wav_size - wav_pos; if (chunk > 4096) chunk = 4096;
-    int w = audsrv_play_audio((const char *)wav + wav_pos, chunk);
-    if (w <= 0) break; wav_pos += w;
+  for (int i = 0; playing && i < 4; i++) {
+    if (buf_pos >= buf_len) { if (!load_part(++part_idx)) { playing = 0; break; } }
+    int chunk = buf_len - buf_pos; if (chunk > 4096) chunk = 4096;
+    int w = audsrv_play_audio(bufA + buf_pos, chunk);
+    if (w <= 0) break; buf_pos += w;
   }
 }
-void audio_music_start(void) { if (!wav_ok) return; audsrv_stop_audio(); wav_pos = 0; playing = 1; audio_pump(); }
+void audio_music_start(void) { if (!wav_ok) return; audsrv_stop_audio(); part_idx = 0; if (!load_part(0)) return; playing = 1; audio_pump(); }
 void audio_music_stop(void)  { playing = 0; if (wav_ok) audsrv_stop_audio(); }
 
 /* ---------- main ---------- */
-int main(void) {
+int main(int argc, char **argv) {
   int ret;
   SifInitRpc(0);
+  video_init();
+  gsKit_clear(gs, GS_SETREG_RGBAQ(0x20, 0x20, 0x60, 0x80, 0));
+  gsKit_queue_exec(gs); gsKit_sync_flip(gs);
+  printf("video ok\n");
   SifLoadModule("rom0:SIO2MAN", 0, NULL);
   SifLoadModule("rom0:PADMAN", 0, NULL);
   SifExecModuleBuffer(freesd_irx, size_freesd_irx, 0, NULL, &ret);
   SifExecModuleBuffer(audsrv_irx, size_audsrv_irx, 0, NULL, &ret);
   padInit(0); padPortOpen(0, 0, padbuf);
   audsrv_init();
-  video_init(); audio_init();
+  printf("audsrv ok\n");
+  audio_init(argc > 0 ? argv[0] : "");
+  printf("audio ok\n");
   game_init(1);
   for (;;) {
     Input in; read_input(&in);
